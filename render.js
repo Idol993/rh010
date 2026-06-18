@@ -58,8 +58,8 @@ CATEGORIES.forEach(function(c){h+='<option value="'+c+'">'+c+'</option>'});
 h+='</select></div><button class="btn btn-primary" onclick="App.showInboundModal()">扫码入库</button></div>';
 h+='<table class="data-table" id="inv-table"><thead><tr><th>编号</th><th>商品名称</th><th>分类</th><th>进价</th><th>售价</th><th>库存</th><th>安全库存</th><th>保质期</th><th>操作</th></tr></thead><tbody>';
 state.products.forEach(function(p){
-var stockBadge=p.stock<p.safetyStock?'danger':'success';
-h+='<tr><td>'+p.id+'</td><td style="font-weight:500">'+p.name+'</td><td><span class="badge-tag info">'+p.category+'</span></td><td>'+fmt(p.cost)+'</td><td>'+fmt(p.price)+'</td><td><span class="badge-tag '+stockBadge+'">'+p.stock+'</span></td><td>'+p.safetyStock+'</td><td>'+p.daysLeft+'天</td><td><button class="btn btn-sm btn-outline" onclick="App.showProductDetail(\''+p.id+'\')">详情</button></td></tr>'});
+var stockBadge=p.stock<p.safetyStock?'danger':'success';var priceCell=p.activePromo?fmt(p.activePromo.promoPrice)+' <span class="badge-tag warning" style="font-size:10px">'+p.activePromo.discountLabel+'</span>':fmt(p.price);
+h+='<tr><td>'+p.id+'</td><td style="font-weight:500">'+p.name+'</td><td><span class="badge-tag info">'+p.category+'</span></td><td>'+fmt(p.cost)+'</td><td>'+priceCell+'</td><td><span class="badge-tag '+stockBadge+'">'+p.stock+'</span></td><td>'+p.safetyStock+'</td><td>'+p.daysLeft+'天</td><td><button class="btn btn-sm btn-outline" onclick="App.showProductDetail(\''+p.id+'\')">详情</button></td></tr>'});
 h+='</tbody></table>';
 return h}
 
@@ -83,11 +83,18 @@ return h}
 function renderInvAlert(){
 var alerts=state.products.filter(function(p){return p.stock<p.safetyStock});
 var h='<div class="flex-between mb-16"><span class="badge-tag danger" style="font-size:13px;padding:4px 12px">'+alerts.length+'项库存低于安全水位</span></div>';
-if(alerts.length===0){h+='<div style="text-align:center;padding:40px;color:var(--text-muted)">所有商品库存正常</div>';return h}
-h+='<table class="data-table"><thead><tr><th>商品</th><th>分类</th><th>当前库存</th><th>安全库存</th><th>缺口</th><th>保质期</th><th>操作</th></tr></thead><tbody>';
+if(alerts.length===0){h+='<div style="text-align:center;padding:40px;color:var(--text-muted)">所有商品库存正常</div>'}
+else{h+='<table class="data-table"><thead><tr><th>商品</th><th>分类</th><th>当前库存</th><th>安全库存</th><th>缺口</th><th>保质期</th><th>操作</th></tr></thead><tbody>';
 alerts.forEach(function(p){var gap=p.safetyStock-p.stock;
 h+='<tr><td style="font-weight:500">'+p.name+'</td><td><span class="badge-tag info">'+p.category+'</span></td><td><span class="badge-tag danger">'+p.stock+'</span></td><td>'+p.safetyStock+'</td><td style="color:var(--danger);font-weight:600">'+gap+'</td><td>'+p.daysLeft+'天</td><td><button class="btn btn-sm btn-primary" onclick="App.triggerPurchase(\''+p.id+'\')">采购</button> <button class="btn btn-sm btn-outline" onclick="App.triggerTransfer(\''+p.id+'\')">调拨</button></td></tr>'});
-h+='</tbody></table>';
+h+='</tbody></table>'}
+h+='<div class="card mt-16"><div class="card-header"><h3>预警单据</h3><span class="badge-tag info">'+state.purchaseOrders.length+'条</span></div><div class="card-body">';
+if(state.purchaseOrders.length===0){h+='<div style="text-align:center;color:var(--text-muted);padding:20px">暂无预警单据</div>'}
+else{h+='<table class="data-table"><thead><tr><th>单号</th><th>类型</th><th>商品</th><th>数量</th><th>金额</th><th>状态</th><th>创建时间</th></tr></thead><tbody>';
+state.purchaseOrders.forEach(function(po){var typeBadge=po.type==='采购'?'info':'purple';var statusBadge=po.status==='待处理'?'warning':'success';
+h+='<tr><td>'+po.id+'</td><td><span class="badge-tag '+typeBadge+'">'+po.type+'</span></td><td style="font-weight:500">'+po.productName+'</td><td>'+po.qty+'</td><td>'+fmt(po.total)+'</td><td><span class="badge-tag '+statusBadge+'">'+po.status+'</span></td><td>'+po.createTime+'</td></tr>'});
+h+='</tbody></table>'}
+h+='</div></div>';
 return h}
 
 function renderPricing(){
@@ -138,9 +145,16 @@ h+='<div class="flex-between" style="margin-bottom:10px"><span><span class="badg
 h+='</div></div>';
 h+='<div class="card"><div class="card-header"><h3>实时在店会员</h3><div class="live-indicator"><span class="live-dot"></span>监测中</div></div><div class="card-body">';
 if(inStore.length===0){h+='<div style="text-align:center;color:var(--text-muted);padding:20px">暂无在店会员</div>'}
-else{inStore.slice(0,8).forEach(function(m){var lc=levelColors[m.level]||'gray';
-h+='<div class="flex-between" style="margin-bottom:8px;padding:8px;border:1px solid var(--border);border-radius:var(--radius)"><div class="flex gap-8" style="align-items:center"><div style="width:28px;height:28px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600">'+m.name[0]+'</div><div><span style="font-weight:500">'+m.name+'</span> <span class="badge-tag '+lc+'">'+m.level+'</span><br><span style="font-size:11px;color:var(--text-muted)">积分'+m.points+'</span></div></div><button class="btn btn-sm btn-outline" onclick="App.sendGuideNotification(\''+m.id+'\')">通知导购</button></div>'})}
+else{inStore.slice(0,8).forEach(function(m){var lc=levelColors[m.level]||'gray';var rsBadge=m.receptionStatus==='已接待'?'<span class="badge-tag success" style="margin-left:4px">已接待</span>':m.receptionStatus==='待接待'?'<span class="badge-tag warning" style="margin-left:4px">待接待</span>':'';var btnHtml=m.receptionStatus==='已接待'?'<span style="font-size:12px;color:var(--success)">'+(m.assignedGuide||'')+'<br><span style="font-size:11px;color:var(--text-muted)">'+(m.receptionTime||'')+'</span></span>':m.receptionStatus==='待接待'?'<button class="btn btn-sm btn-warning" onclick="App.sendGuideNotification(\''+m.id+'\')">通知导购</button>':'<button class="btn btn-sm btn-outline" onclick="App.sendGuideNotification(\''+m.id+'\')">通知导购</button>';
+h+='<div class="flex-between" style="margin-bottom:8px;padding:8px;border:1px solid var(--border);border-radius:var(--radius)"><div class="flex gap-8" style="align-items:center"><div style="width:28px;height:28px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600">'+m.name[0]+'</div><div><span style="font-weight:500">'+m.name+'</span> <span class="badge-tag '+lc+'">'+m.level+'</span>'+rsBadge+'<br><span style="font-size:11px;color:var(--text-muted)">积分'+m.points+'</span></div></div>'+btnHtml+'</div>'})}
 h+='</div></div></div>';
+h+='<div class="card mb-20"><div class="card-header"><h3>导购接待提醒</h3><span class="badge-tag info">'+state.receptions.length+'条</span></div><div class="card-body">';
+if(state.receptions.length===0){h+='<div style="text-align:center;color:var(--text-muted);padding:20px">暂无接待记录</div>'}
+else{h+='<table class="data-table"><thead><tr><th>会员</th><th>等级</th><th>识别方式</th><th>状态</th><th>导购</th><th>时间</th></tr></thead><tbody>';
+state.receptions.forEach(function(r){var sc=r.status==='已接待'?'success':'warning';
+h+='<tr><td style="font-weight:500">'+r.memberName+'</td><td><span class="badge-tag '+(levelColors[r.memberLevel]||'gray')+'">'+r.memberLevel+'</span></td><td>'+r.method+'</td><td><span class="badge-tag '+sc+'">'+r.status+'</span></td><td>'+(r.guideName||'-')+'</td><td>'+(r.createTime||'-')+'</td></tr>'});
+h+='</tbody></table>'}
+h+='</div></div>';
 h+='<div class="card"><div class="card-header"><h3>会员列表</h3></div><div class="card-body"><table class="data-table"><thead><tr><th>会员号</th><th>姓名</th><th>等级</th><th>积分</th><th>累计消费</th><th>优惠券</th><th>最近到店</th><th>状态</th><th>操作</th></tr></thead><tbody>';
 state.members.forEach(function(m){var lc=levelColors[m.level]||'gray';var statusBadge=m.inStore?'success':'gray';var statusText=m.inStore?'在店':'离店';
 h+='<tr><td>'+m.id+'</td><td style="font-weight:500">'+m.name+'</td><td><span class="badge-tag '+lc+'">'+m.level+'</span></td><td>'+m.points.toLocaleString()+'</td><td>'+fmt(m.totalSpent)+'</td><td>'+m.coupons+'张</td><td>'+m.lastVisit+'</td><td><span class="badge-tag '+statusBadge+'">'+statusText+'</span></td><td><button class="btn btn-sm btn-outline" onclick="App.showMemberDetail(\''+m.id+'\')">详情</button></td></tr>'});
@@ -152,13 +166,20 @@ var expiring=state.products.filter(function(p){return p.daysLeft<=7});
 var h='<div class="page-header"><h2>促销管理</h2><div class="actions"><button class="btn btn-primary" onclick="App.showCreatePromo()">创建促销活动</button></div></div>';
 h+='<div class="grid grid-2 mb-20"><div class="card"><div class="card-header"><h3>临期商品自动促销</h3><span class="badge-tag warning">'+expiring.length+'项</span></div><div class="card-body">';
 if(expiring.length===0){h+='<div style="text-align:center;color:var(--text-muted);padding:20px">暂无临期商品</div>'}
-else{expiring.forEach(function(p){var disc=p.daysLeft<=3?0.5:0.8;var newPrice=(p.price*disc).toFixed(2);var badge=p.daysLeft<=3?'danger':'warning';
-h+='<div class="flex-between" style="margin-bottom:10px;padding:10px;border:1px solid var(--border);border-radius:var(--radius)"><div><span style="font-weight:500">'+p.name+'</span> <span class="badge-tag '+badge+'">剩余'+p.daysLeft+'天</span><br><span style="font-size:12px;color:var(--text-secondary)">'+fmt(p.price)+' → <strong style="color:var(--danger)">'+fmt(newPrice)+'</strong></span></div><button class="btn btn-sm btn-warning" onclick="App.pushExpiryPromo(\''+p.id+'\','+disc+')">推送促销</button></div>'})}
+else{expiring.forEach(function(p){var disc=p.daysLeft<=3?0.5:0.8;var newPrice=(p.origPrice*disc).toFixed(2);var badge=p.daysLeft<=3?'danger':'warning';var priceDisplay=p.activePromo?'<span style="font-size:12px;color:var(--text-secondary)">'+fmt(p.origPrice)+' → <strong style="color:var(--danger)">'+fmt(p.activePromo.promoPrice)+'</strong></span>':'<span style="font-size:12px;color:var(--text-secondary)">'+fmt(p.origPrice)+' → <strong style="color:var(--danger)">'+fmt(newPrice)+'</strong></span>';var actionBtn=p.activePromo?'<span class="badge-tag success">促销已生效</span>':'<button class="btn btn-sm btn-warning" onclick="App.pushExpiryPromo(\''+p.id+'\','+disc+')">推送促销</button>';
+h+='<div class="flex-between" style="margin-bottom:10px;padding:10px;border:1px solid var(--border);border-radius:var(--radius)"><div><span style="font-weight:500">'+p.name+'</span> <span class="badge-tag '+badge+'">剩余'+p.daysLeft+'天</span><br>'+priceDisplay+'</div>'+actionBtn+'</div>'})}
 h+='</div></div>';
 h+='<div class="card"><div class="card-header"><h3>优惠券管理</h3></div><div class="card-body">';
 state.coupons.forEach(function(c){var usage=((c.used/c.total)*100).toFixed(1);var typeBadge=c.type==='折扣'?'info':'purple';
 h+='<div style="margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:var(--radius)"><div class="flex-between" style="margin-bottom:6px"><span style="font-weight:600">'+c.name+'</span><span class="badge-tag '+typeBadge+'">'+c.type+'</span></div><div class="flex-between" style="font-size:12px;color:var(--text-secondary);margin-bottom:8px"><span>有效期至'+c.validTo+'</span><span>已用'+c.used+'/'+c.total+'</span></div><div class="progress-bar"><div class="fill blue" style="width:'+usage+'%"></div></div></div>'});
 h+='</div></div></div>';
+h+='<div class="card mb-20"><div class="card-header"><h3>已生效促销</h3><span class="badge-tag success">'+state.activePromotions.length+'项</span></div><div class="card-body">';
+if(state.activePromotions.length===0){h+='<div style="text-align:center;color:var(--text-muted);padding:20px">暂无生效中的促销</div>'}
+else{h+='<table class="data-table"><thead><tr><th>商品名</th><th>促销类型</th><th>原价</th><th>促销价</th><th>折扣</th><th>生效时间</th></tr></thead><tbody>';
+state.activePromotions.forEach(function(ap){
+h+='<tr><td style="font-weight:500">'+ap.productName+'</td><td><span class="badge-tag warning">'+ap.type+'</span></td><td>'+fmt(ap.origPrice)+'</td><td style="color:var(--danger);font-weight:600">'+fmt(ap.promoPrice)+'</td><td>'+ap.discountLabel+'</td><td>'+ap.createTime+'</td></tr>'});
+h+='</tbody></table>'}
+h+='</div></div>';
 return h}
 
 function renderLoss(){
@@ -168,14 +189,13 @@ h+='<div class="card mb-20"><div class="card-header"><h3>CCTV监控</h3><div cla
 cameras.forEach(function(cam){
 h+='<div class="cctv-feed'+(cam.alert?' alert-active':'')+'"><div class="feed-header"><span class="feed-label">'+cam.id+' '+cam.name+'</span><span class="feed-live">REC</span></div><div class="feed-content"><svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></div></div>'});
 h+='</div></div></div>';
-h+='<div class="grid grid-2"><div class="card"><div class="card-header"><h3>警报事件</h3></div><div class="card-body"><div class="timeline">';
-state.lossEvents.forEach(function(ev){var tc=ev.type==='大宗未结账'?'danger':'warning';var sc=ev.status==='已处理'?'success':'warning';
-h+='<div class="timeline-item '+tc+'"><div class="tl-time">'+ev.time+'</div><div class="tl-title">'+ev.type+' <span class="badge-tag '+sc+'">'+ev.status+'</span></div><div class="tl-desc">'+ev.camera+' - '+ev.detail+'</div></div>'});
+h+='<div class="grid grid-2"><div class="card"><div class="card-header"><h3>警报事件</h3><button class="btn btn-sm btn-danger" onclick="App.triggerLossAlert()">模拟防损警报</button></div><div class="card-body"><div class="timeline">';
+state.lossEvents.forEach(function(ev){var tc=ev.type==='大宗未结账'?'danger':'warning';var sc=ev.status==='已处理'?'success':'warning';var resolveBtn=ev.status==='监控中'?' <button class="btn btn-sm btn-primary" style="margin-top:6px" onclick="App.resolveLossEvent(\''+ev.id+'\')">处理并解锁</button>':'';
+h+='<div class="timeline-item '+tc+'"><div class="tl-time">'+ev.time+'</div><div class="tl-title">'+ev.type+' <span class="badge-tag '+sc+'">'+ev.status+'</span></div><div class="tl-desc">'+ev.camera+' - '+ev.detail+'</div>'+resolveBtn+'</div>'});
 h+='</div></div></div>';
 h+='<div class="card"><div class="card-header"><h3>闸机控制</h3></div><div class="card-body">';
-var gates=[{name:'出口A',status:'正常'},{name:'出口B',status:'正常'},{name:'员工通道',status:'正常'}];
-gates.forEach(function(g){var badge=g.status==='正常'?'success':'danger';
-h+='<div class="flex-between" style="margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:var(--radius)"><div><span style="font-weight:500">'+g.name+'</span><br><span class="badge-tag '+badge+'">'+g.status+'</span></div><button class="btn btn-sm btn-outline" onclick="App.toast(\'闸机'+g.name+'已操作\',\'info\')">控制</button></div>'});
+state.gates.forEach(function(g){var badge=g.status==='正常'?'success':'danger';var lockInfo=g.status==='已锁定'&&g.linkedEvent?'<br><span style="font-size:11px;color:var(--danger)">关联事件: '+g.linkedEvent+'</span>':'';var gateBtn=g.status==='已锁定'?'<button class="btn btn-sm btn-primary" onclick="App.unlockGate(\''+g.id+'\')">解锁</button>':'<span class="badge-tag success">正常运行</span>';
+h+='<div class="flex-between" style="margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:var(--radius)"><div><span style="font-weight:500">'+g.name+'</span><br><span class="badge-tag '+badge+'">'+g.status+'</span>'+lockInfo+'</div>'+gateBtn+'</div>'});
 h+='</div></div></div>';
 return h}
 
