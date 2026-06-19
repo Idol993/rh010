@@ -30,6 +30,12 @@ function nextOrderId(){return 'PO'+String(orderId++).padStart(5,'0')}
 var txId=1;
 function nextTxId(){return 'TX'+String(txId++).padStart(6,'0')}
 
+var campId=1;
+function nextCampId(){return 'CAMP'+String(campId++).padStart(4,'0')}
+
+var invLogId=1;
+function nextInvLogId(){return 'IL'+String(invLogId++).padStart(5,'0')}
+
 var state={
   currentUser:USERS[0],
   products:genProducts(),
@@ -63,24 +69,77 @@ var state={
   checkoutDiscount:0,
   transactions:[],
   memberCouponInstances:[],
-  txFilter:{range:'today',phone:''}
+  txFilter:{range:'today',phone:'',product:'',coupon:'',cashier:''},
+  campaigns:[],
+  distributionStats:{},
+  inventoryLogs:[],
+  currentMemberTab:'基本信息'
 };
+
+function isExpiringSoon(validTo){
+  var today=new Date(2026,5,19);
+  var parts=validTo.split('-');
+  var expire=new Date(parseInt(parts[0]),parseInt(parts[1])-1,parseInt(parts[2]));
+  var diff=Math.ceil((expire.getTime()-today.getTime())/(1000*60*60*24));
+  return diff>=0&&diff<=7;
+}
 
 function initMemberCoupons(){
   var mci=[];
   var cid=1;
+  var sources=['注册赠送','等级发放','活动领取','手动发放'];
   state.members.forEach(function(m){
     var count=Math.floor(Math.random()*4)+1;
     var pool=state.coupons.slice();
     for(var i=0;i<count&&pool.length;i++){
       var idx=Math.floor(Math.random()*pool.length);
       var c=pool.splice(idx,1)[0];
-      mci.push({id:'MCI'+String(cid++).padStart(6,'0'),couponId:c.id,memberId:m.id,name:c.name,type:c.type,threshold:c.threshold,discount:c.discount,category:c.category||'',validTo:c.validTo,status:'可用'});
+      var source=sources[Math.floor(Math.random()*sources.length)];
+      mci.push({id:'MCI'+String(cid++).padStart(6,'0'),couponId:c.id,memberId:m.id,name:c.name,type:c.type,threshold:c.threshold,discount:c.discount,category:c.category||'',validTo:c.validTo,status:'可用',source:source,usedInTx:null,receivedAt:now()});
     }
   });
   state.memberCouponInstances=mci;
+  state.coupons.forEach(function(c){
+    var usedCount=state.memberCouponInstances.filter(function(i){return i.couponId===c.id&&i.status==='已核销'}).length;
+    c.used=usedCount;
+  });
+  initDistributionStats();
+  initSampleCampaigns();
 }
-initMemberCoupons();
+
+function initDistributionStats(){
+  var stats={};
+  state.coupons.forEach(function(c){
+    var total=state.memberCouponInstances.filter(function(i){return i.couponId===c.id}).length;
+    var used=state.memberCouponInstances.filter(function(i){return i.couponId===c.id&&i.status==='已核销'}).length;
+    stats[c.id]={total:total,used:used,remaining:total-used};
+  });
+  state.distributionStats=stats;
+}
+
+function initSampleCampaigns(){
+  var couponIds=['C001','C002','C003'];
+  var targetTypes=['会员等级','指定会员'];
+  var levels=['普通会员','银卡会员','金卡会员'];
+  for(var i=0;i<3;i++){
+    var cid=couponIds[i];
+    var coupon=state.coupons.find(function(c){return c.id===cid});
+    var tt=targetTypes[Math.floor(Math.random()*targetTypes.length)];
+    var tv=tt==='会员等级'?levels[Math.floor(Math.random()*levels.length)]:state.members[Math.floor(Math.random()*10)].name;
+    var cnt=Math.floor(Math.random()*20)+5;
+    state.campaigns.push({
+      id:nextCampId(),
+      couponId:cid,
+      couponName:coupon?coupon.name:'优惠券',
+      targetType:tt,
+      targetValue:tv,
+      totalCount:cnt,
+      sentCount:cnt,
+      createdTime:now(),
+      creator:state.currentUser.name
+    });
+  }
+}
 
 function getMemberCouponCount(memberId){return state.memberCouponInstances.filter(function(i){return i.memberId===memberId&&i.status==='可用'}).length}
 
@@ -296,7 +355,34 @@ App.simulateScan=function(){var p=state.products[Math.floor(Math.random()*state.
 
 App.filterProducts=function(){var s=(document.getElementById('inv-search')?.value||'').toLowerCase();var cat=document.getElementById('inv-cat-filter')?.value||'';document.querySelectorAll('#inv-table tbody tr').forEach(function(r){var t=r.textContent.toLowerCase();r.style.display=(!s||t.indexOf(s)!==-1)&&(!cat||t.indexOf(cat)!==-1)?'':'none'})};
 
-App.showProductDetail=function(id){var p=state.products.find(function(x){return x.id===id});if(!p)return;var r=calcRepl(p);App.showModal('商品详情 - '+p.name,'<div class="grid grid-2"><div class="form-group"><label>商品编号</label><input value="'+p.id+'" readonly></div><div class="form-group"><label>条码</label><input value="'+p.barcode+'" readonly></div><div class="form-group"><label>分类</label><input value="'+p.category+'" readonly></div><div class="form-group"><label>进价</label><input value="'+fmt(p.cost)+'" readonly></div><div class="form-group"><label>售价</label><input value="'+fmt(p.price)+'" readonly></div><div class="form-group"><label>库存</label><input value="'+p.stock+'" readonly></div><div class="form-group"><label>安全库存</label><input value="'+p.safetyStock+'" readonly></div><div class="form-group"><label>保质期剩余</label><input value="'+p.daysLeft+'天" readonly></div></div>'+(p.activePromo?'<div style="margin-top:12px;padding:10px;background:var(--warning-light);border-radius:var(--radius)"><strong>促销生效中：</strong>'+p.activePromo.discountLabel+' → '+fmt(p.activePromo.promoPrice)+'</div>':'')+'<h4 style="margin:16px 0 8px">补货建议</h4><div class="grid grid-2"><div><span style="color:var(--text-secondary)">日均销量：</span>'+r.avg+'</div><div><span style="color:var(--text-secondary)">季节因子：</span>'+r.sf+'</div><div><span style="color:var(--text-secondary)">再订货点：</span>'+r.rp+'</div><div><span style="color:var(--text-secondary)">建议补货：</span><strong style="color:var(--primary)">'+r.sq+'</strong></div></div>','<button class="btn btn-primary" onclick="App.triggerPurchase(\''+p.id+'\');App.closeModal()">立即采购</button><button class="btn btn-outline" onclick="App.closeModal()">关闭</button>')};
+App.showProductDetail=function(productId){
+  var p=state.products.find(function(x){return x.id===productId});
+  if(!p)return;
+  var r=calcRepl(p);
+  var logs=state.inventoryLogs.filter(function(l){return l.productId===productId}).sort(function(a,b){return a.time>b.time?-1:1});
+  var html='<div class="grid grid-2"><div class="form-group"><label>商品编号</label><input value="'+p.id+'" readonly></div><div class="form-group"><label>条码</label><input value="'+p.barcode+'" readonly></div><div class="form-group"><label>分类</label><input value="'+p.category+'" readonly></div><div class="form-group"><label>进价</label><input value="'+fmt(p.cost)+'" readonly></div><div class="form-group"><label>售价</label><input value="'+fmt(p.price)+'" readonly></div><div class="form-group"><label>库存</label><input value="'+p.stock+'" readonly></div><div class="form-group"><label>安全库存</label><input value="'+p.safetyStock+'" readonly></div><div class="form-group"><label>保质期剩余</label><input value="'+p.daysLeft+'天" readonly></div></div>';
+  if(p.activePromo){
+    html+='<div style="margin-top:12px;padding:10px;background:var(--warning-light);border-radius:var(--radius)"><strong>促销生效中：</strong>'+p.activePromo.discountLabel+' → '+fmt(p.activePromo.promoPrice)+'</div>';
+  }
+  html+='<h4 style="margin:16px 0 8px">补货建议</h4><div class="grid grid-2"><div><span style="color:var(--text-secondary)">日均销量：</span>'+r.avg+'</div><div><span style="color:var(--text-secondary)">季节因子：</span>'+r.sf+'</div><div><span style="color:var(--text-secondary)">再订货点：</span>'+r.rp+'</div><div><span style="color:var(--text-secondary)">建议补货：</span><strong style="color:var(--primary)">'+r.sq+'</strong></div></div>';
+  html+='<h4 style="margin:16px 0 8px">库存变化时间线</h4>';
+  if(logs.length>0){
+    html+='<div style="border-left:2px solid var(--border);margin-left:8px;padding-left:16px">';
+    logs.forEach(function(log){
+      var dotColor=log.type==='采购入库'?'var(--success)':'var(--info)';
+      html+='<div style="margin-bottom:12px;position:relative"><div style="position:absolute;left:-22px;top:4px;width:10px;height:10px;border-radius:50%;background:'+dotColor+'"></div>';
+      html+='<div style="font-size:12px;color:var(--text-muted)">'+log.time+'</div>';
+      html+='<div><span class="badge-tag '+(log.type==='采购入库'?'success':'info')+'" style="font-size:10px">'+log.type+'</span> ';
+      html+='数量：'+log.qty+'，库存变化：'+log.beforeStock+' → '+log.afterStock;
+      html+='<br><span style="font-size:11px;color:var(--text-secondary)">单据号：'+log.refId+'</span>';
+      html+='</div></div>';
+    });
+    html+='</div>';
+  }else{
+    html+='<div style="text-align:center;padding:20px;color:var(--text-muted)">暂无库存变化记录</div>';
+  }
+  App.showModal('商品详情 - '+p.name,html,'<button class="btn btn-primary" onclick="App.triggerPurchase(\''+p.id+'\');App.closeModal()">立即采购</button><button class="btn btn-outline" onclick="App.closeModal()">关闭</button>');
+};
 
 App.triggerPurchase=function(id){
   var p=state.products.find(function(x){return x.id===id});if(!p)return;
@@ -335,7 +421,7 @@ App.syncPriceTag=function(id){var p=state.products.find(function(x){return x.id=
 App.changePrice=function(id){var p=state.products.find(function(x){return x.id===id});if(!p)return;App.showModal('修改价格 - '+p.name,'<div class="form-group"><label>当前售价</label><input value="'+p.price+'" readonly></div><div class="form-group"><label>新售价</label><input type="number" id="new-price" value="'+p.price+'" step="0.01"></div><div style="font-size:12px;color:var(--text-muted)">改价后将自动同步至电子价签</div>','<button class="btn btn-primary" onclick="App.confirmPriceChange(\''+id+'\')">确认改价并同步</button><button class="btn btn-outline" onclick="App.closeModal()">取消</button>')};
 App.confirmPriceChange=function(id){var p=state.products.find(function(x){return x.id===id});var inp=document.getElementById('new-price');if(p&&inp){var np=parseFloat(inp.value);if(isNaN(np)||np<=0){App.toast('请输入有效价格','warning');return}p.price=np;p.origPrice=np;p.priceTagSynced=true;App.closeModal();App.toast(p.name+'价格已更新为'+fmt(np)+'，价签已同步','success');navigate('pricing')}};
 
-App.showMemberIdentify=function(){App.showModal('会员进店识别','<div class="tabs" style="margin-bottom:16px"><div class="tab active" id="tab-wifi">Wi-Fi探针</div><div class="tab" id="tab-face">人脸识别</div></div><div id="wifi-panel"><div style="padding:20px;text-align:center;background:#f8fafc;border-radius:var(--radius)"><svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="var(--primary)" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg><h4 style="margin:8px 0 4px">Wi-Fi探针监测中</h4><p style="color:var(--text-secondary);font-size:13px">正在扫描附近已连接Wi-Fi的会员设备</p><button class="btn btn-primary" style="margin-top:12px" onclick="App.simulateWifiDetect()">模拟检测</button></div></div><div id="face-panel" style="display:none"><div style="text-align:center"><div class="face-scan-area"><svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 3H5a2 2 0 0 0-2 2v4"/><path d="M21 9V5a2 2 0 0 0-2-2h-4"/><path d="M3 15v4a2 2 0 0 0 2 2h4"/><path d="M15 21h4a2 2 0 0 0 2-2v-4"/><circle cx="12" cy="10" r="3"/><path d="M7 18v-1a5 5 0 0 1 10 0v1"/></svg></div><p style="color:var(--text-secondary);font-size:13px;margin-top:12px">人脸识别需会员授权</p><button class="btn btn-primary" style="margin-top:8px" onclick="App.simulateFaceDetect()">模拟识别</button></div></div>','<button class="btn btn-outline" onclick="App.closeModal()">关闭</button>');setTimeout(function(){var tw=document.getElementById('tab-wifi');var tf=document.getElementById('tab-face');if(tw&&tf){tw.onclick=function(){tw.classList.add('active');tf.classList.remove('active');document.getElementById('wifi-panel').style.display='block';document.getElementById('face-panel').style.display='none'};tf.onclick=function(){tf.classList.add('active');tw.classList.remove('active');document.getElementById('face-panel').style.display='block';document.getElementById('wifi-panel').style.display='none'}}},0)};
+App.showMemberIdentify=function(){App.showModal('会员进店识别','<div class="tabs" style="margin-bottom:16px"><div class="tab active" id="tab-wifi">Wi-Fi探针</div><div class="tab" id="tab-face">人脸识别</div></div><div id="wifi-panel"><div style="padding:20px;text-align:center;background:#f8fafc;border-radius:var(--radius)"><svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="var(--primary)" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 16 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg><h4 style="margin:8px 0 4px">Wi-Fi探针监测中</h4><p style="color:var(--text-secondary);font-size:13px">正在扫描附近已连接Wi-Fi的会员设备</p><button class="btn btn-primary" style="margin-top:12px" onclick="App.simulateWifiDetect()">模拟检测</button></div></div><div id="face-panel" style="display:none"><div style="text-align:center"><div class="face-scan-area"><svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 3H5a2 2 0 0 0-2 2v4"/><path d="M21 9V5a2 2 0 0 0-2-2h-4"/><path d="M3 15v4a2 2 0 0 0 2 2h4"/><path d="M15 21h4a2 2 0 0 0 2-2v-4"/><circle cx="12" cy="10" r="3"/><path d="M7 18v-1a5 5 0 0 1 10 0v1"/></svg></div><p style="color:var(--text-secondary);font-size:13px;margin-top:12px">人脸识别需会员授权</p><button class="btn btn-primary" style="margin-top:8px" onclick="App.simulateFaceDetect()">模拟识别</button></div></div>','<button class="btn btn-outline" onclick="App.closeModal()">关闭</button>');setTimeout(function(){var tw=document.getElementById('tab-wifi');var tf=document.getElementById('tab-face');if(tw&&tf){tw.onclick=function(){tw.classList.add('active');tf.classList.remove('active');document.getElementById('wifi-panel').style.display='block';document.getElementById('face-panel').style.display='none'};tf.onclick=function(){tf.classList.add('active');tw.classList.remove('active');document.getElementById('face-panel').style.display='block';document.getElementById('wifi-panel').style.display='none'}}},0)};
 
 function createReception(member,method){
   member.inStore=true;
@@ -396,21 +482,73 @@ App.sendGuideNotification=function(memberId){
   if(state.currentPage==='members')navigate('members');
 };
 
-App.showMemberDetail=function(id){
-  var m=state.members.find(function(x){return x.id===id});
+App.switchMemberTab=function(tabName){
+  state.currentMemberTab=tabName;
+  var tabs=document.querySelectorAll('#member-detail-tabs .tab');
+  tabs.forEach(function(t){t.classList.toggle('active',t.dataset.tab===tabName)});
+  var panels=document.querySelectorAll('.member-tab-panel');
+  panels.forEach(function(p){p.style.display='none'});
+  var activePanel=document.getElementById('member-panel-'+tabName);
+  if(activePanel)activePanel.style.display='block';
+};
+
+App.showMemberDetail=function(memberId){
+  var m=state.members.find(function(x){return x.id===memberId});
   if(!m)return;
+  state.currentMemberTab='基本信息';
   var recs=state.receptions.filter(function(r){return r.memberId===m.id});
   var txs=state.transactions.filter(function(t){return t.memberId===m.id});
+  var coupons=state.memberCouponInstances.filter(function(c){return c.memberId===m.id});
   var timeline=[];
   recs.forEach(function(r){timeline.push({type:'reception',time:r.enterTime,data:r})});
   txs.forEach(function(t){timeline.push({type:'transaction',time:t.time,data:t})});
   timeline.sort(function(a,b){return a.time>b.time?-1:a.time<b.time?1:0});
-  var html='<div class="grid grid-2"><div class="form-group"><label>会员号</label><input value="'+m.id+'" readonly></div><div class="form-group"><label>等级</label><input value="'+m.level+'" readonly></div><div class="form-group"><label>积分</label><input value="'+m.points.toLocaleString()+'" readonly></div><div class="form-group"><label>累计消费</label><input value="'+fmt(m.totalSpent)+'" readonly></div><div class="form-group"><label>手机号</label><input value="'+m.phone+'" readonly></div><div class="form-group"><label>优惠券</label><input value="'+getMemberCouponCount(m.id)+'张" readonly></div></div>';
+
+  var html='<div class="tabs" id="member-detail-tabs" style="margin-bottom:16px">';
+  html+='<div class="tab active" data-tab="基本信息" onclick="App.switchMemberTab(\'基本信息\')">基本信息</div>';
+  html+='<div class="tab" data-tab="券包" onclick="App.switchMemberTab(\'券包\')">券包</div>';
+  html+='<div class="tab" data-tab="到店与消费" onclick="App.switchMemberTab(\'到店与消费\')">到店与消费</div>';
+  html+='</div>';
+
+  html+='<div class="member-tab-panel" id="member-panel-基本信息">';
+  html+='<div class="grid grid-2"><div class="form-group"><label>会员号</label><input value="'+m.id+'" readonly></div><div class="form-group"><label>等级</label><input value="'+m.level+'" readonly></div><div class="form-group"><label>积分</label><input value="'+m.points.toLocaleString()+'" readonly></div><div class="form-group"><label>累计消费</label><input value="'+fmt(m.totalSpent)+'" readonly></div><div class="form-group"><label>手机号</label><input value="'+m.phone+'" readonly></div><div class="form-group"><label>优惠券</label><input value="'+getMemberCouponCount(m.id)+'张" readonly></div></div>';
   if(m.receptionStatus){
     html+='<div style="margin-top:12px;padding:10px;background:#f8fafc;border-radius:var(--radius)"><strong>接待状态：</strong><span class="badge-tag '+(m.receptionStatus==='已接待'?'success':'warning')+'">'+m.receptionStatus+'</span>'+(m.assignedGuide?' · 导购：'+m.assignedGuide:'')+(m.receptionTime?' · 时间：'+m.receptionTime:'')+'</div>';
   }
+  html+='</div>';
+
+  html+='<div class="member-tab-panel" id="member-panel-券包" style="display:none">';
+  if(coupons.length>0){
+    html+='<table class="data-table"><thead><tr><th>券名</th><th>状态</th><th>有效期</th><th>适用范围</th><th>领取来源</th><th>使用记录</th></tr></thead><tbody>';
+    coupons.forEach(function(c){
+      var statusBadge='';
+      if(c.status==='已核销'){
+        statusBadge='<span class="badge-tag gray" style="font-size:10px">已核销</span>';
+      }else{
+        if(isExpiringSoon(c.validTo)){
+          statusBadge='<span class="badge-tag success" style="font-size:10px">可用</span> <span class="badge-tag danger" style="font-size:10px">即将过期</span>';
+        }else{
+          statusBadge='<span class="badge-tag success" style="font-size:10px">可用</span>';
+        }
+      }
+      var scope=c.category?c.category:'全品类';
+      var usage='';
+      if(c.status==='已核销'&&c.usedInTx){
+        usage='<button class="btn btn-sm btn-outline" onclick="App.showTransactionDetail(\''+c.usedInTx+'\')">查看交易</button>';
+      }else{
+        usage='<span style="color:var(--text-muted);font-size:12px">-</span>';
+      }
+      html+='<tr><td>'+c.name+'</td><td>'+statusBadge+'</td><td>'+c.validTo+'</td><td>'+scope+'</td><td>'+c.source+'</td><td>'+usage+'</td></tr>';
+    });
+    html+='</tbody></table>';
+  }else{
+    html+='<div style="text-align:center;padding:20px;color:var(--text-muted)">暂无优惠券</div>';
+  }
+  html+='</div>';
+
+  html+='<div class="member-tab-panel" id="member-panel-到店与消费" style="display:none">';
   if(timeline.length>0){
-    html+='<h4 style="margin:16px 0 8px">到店与接待时间线</h4>';
+    html+='<h4 style="margin:16px 0 8px">到店与消费时间线</h4>';
     html+='<div style="border-left:2px solid var(--border);margin-left:8px;padding-left:16px">';
     timeline.forEach(function(item){
       if(item.type==='reception'){
@@ -435,7 +573,11 @@ App.showMemberDetail=function(id){
       }
     });
     html+='</div>';
+  }else{
+    html+='<div style="text-align:center;padding:20px;color:var(--text-muted)">暂无到店与消费记录</div>';
   }
+  html+='</div>';
+
   App.showModal('会员详情 - '+m.name,html,'<button class="btn btn-outline" onclick="App.closeModal()">关闭</button>');
 };
 
@@ -581,11 +723,12 @@ App.completeCheckout=function(){
     state.selectedMember.totalSpent+=finalAmount;
     if(state.appliedCouponInstanceId){
       var inst=state.memberCouponInstances.find(function(x){return x.id===state.appliedCouponInstanceId});
-      if(inst){inst.status='已核销'}
+      if(inst){inst.status='已核销';inst.usedInTx=tx.id}
       if(couponUsed){
         var tmpl=state.coupons.find(function(c){return c.id===couponUsed.id});
         if(tmpl){tmpl.used++}
       }
+      initDistributionStats();
     }
     var sucMsg='结算成功！应付'+fmt(finalAmount)+'，会员获得'+pts+'积分';
     if(couponUsed&&discount>0){sucMsg+='，已使用：'+couponName}
@@ -627,16 +770,182 @@ App.showTransactionDetail=function(id){
   if(tx.couponUsed){
     html+='<div style="margin-top:12px;padding:10px;background:var(--warning-light);border:1px solid var(--warning);border-radius:var(--radius)"><strong>优惠券使用说明: </strong>'+tx.couponUsed.reason+'</div>';
   }
-  App.showModal('交易详情 - '+tx.id,html,'<button class="btn btn-outline" onclick="App.closeModal()">关闭</button>');
+  html+='<h4 style="margin:16px 0 8px">交易凭证</h4>';
+  html+='<div class="receipt" style="margin-top:8px"><div class="receipt-header"><h4>阳光花园店</h4><div>'+tx.time+'</div></div>';
+  tx.items.forEach(function(i){
+    html+='<div class="receipt-line"><span>'+i.name+' ×'+i.qty+'</span><span>'+fmt(i.subtotal)+'</span></div>';
+  });
+  html+='<div style="border-top:1px dashed var(--border);margin:6px 0"></div>';
+  html+='<div class="receipt-line"><span>商品合计</span><span>'+fmt(tx.subtotal)+'</span></div>';
+  if(tx.discount>0&&tx.couponUsed){
+    html+='<div class="receipt-line" style="color:var(--danger)"><span>优惠('+tx.couponUsed.name+')</span><span>-'+fmt(tx.discount)+'</span></div>';
+  }
+  html+='<div class="receipt-total"><div class="receipt-line"><span>应付</span><span>'+fmt(tx.finalAmount)+'</span></div></div>';
+  if(tx.memberName){
+    html+='<div style="text-align:center;margin-top:8px;font-size:11px;color:var(--text-muted)">会员:'+tx.memberName+' · 积分+'+tx.pointsEarned+'</div>';
+  }
+  html+='</div>';
+  var footer='';
+  if(tx.memberId){
+    footer+='<button class="btn btn-primary" onclick="App.showMemberPurchaseAnalysis(\''+tx.memberId+'\')">查看会员分析</button>';
+  }
+  footer+='<button class="btn btn-outline" onclick="App.closeModal()">关闭</button>';
+  App.showModal('交易详情 - '+tx.id,html,footer);
+};
+
+App.showMemberPurchaseAnalysis=function(memberId){
+  var m=state.members.find(function(x){return x.id===memberId});
+  if(!m)return;
+  var txs=state.transactions.filter(function(t){return t.memberId===memberId});
+  var totalSpent=txs.reduce(function(s,t){return s+t.finalAmount},0);
+  var totalDiscount=txs.reduce(function(s,t){return s+t.discount},0);
+  var totalCouponsUsed=txs.filter(function(t){return t.couponUsed}).length;
+
+  var couponUsage={};
+  var couponDiscount={};
+  txs.forEach(function(t){
+    if(t.couponUsed){
+      var cid=t.couponUsed.id;
+      var cname=t.couponUsed.name;
+      if(!couponUsage[cid]){couponUsage[cid]={name:cname,count:0,totalDiscount:0}}
+      couponUsage[cid].count++;
+      couponUsage[cid].totalDiscount+=t.discount;
+    }
+  });
+  var topCoupons=Object.keys(couponUsage).map(function(k){return couponUsage[k]}).sort(function(a,b){return b.count-a.count}).slice(0,3);
+
+  var html='<div style="padding:12px;background:var(--primary-light);border-radius:var(--radius);margin-bottom:16px">';
+  html+='<div class="flex-between"><strong>'+m.name+'</strong><span class="badge-tag info">'+m.level+'</span></div>';
+  html+='<div class="grid grid-3" style="margin-top:12px">';
+  html+='<div style="text-align:center"><div style="font-size:11px;color:var(--text-secondary)">累计消费</div><div style="font-size:18px;font-weight:700;color:var(--primary)">'+fmt(totalSpent)+'</div></div>';
+  html+='<div style="text-align:center"><div style="font-size:11px;color:var(--text-secondary)">累计优惠</div><div style="font-size:18px;font-weight:700;color:var(--danger)">'+fmt(totalDiscount)+'</div></div>';
+  html+='<div style="text-align:center"><div style="font-size:11px;color:var(--text-secondary)">用券次数</div><div style="font-size:18px;font-weight:700;color:var(--success)">'+totalCouponsUsed+'</div></div>';
+  html+='</div></div>';
+
+  html+='<h4 style="margin:16px 0 8px">最近消费记录</h4>';
+  var recentTxs=txs.slice(0,5);
+  if(recentTxs.length>0){
+    html+='<table class="data-table"><thead><tr><th>时间</th><th>金额</th><th>优惠</th><th>操作</th></tr></thead><tbody>';
+    recentTxs.forEach(function(t){
+      html+='<tr><td>'+t.time+'</td><td>'+fmt(t.finalAmount)+'</td><td>'+fmt(t.discount)+'</td><td><button class="btn btn-sm btn-outline" onclick="App.showTransactionDetail(\''+t.id+'\')">查看</button></td></tr>';
+    });
+    html+='</tbody></table>';
+  }else{
+    html+='<div style="text-align:center;padding:20px;color:var(--text-muted)">暂无消费记录</div>';
+  }
+
+  html+='<h4 style="margin:16px 0 8px">常用券 TOP 3</h4>';
+  if(topCoupons.length>0){
+    html+='<table class="data-table"><thead><tr><th>优惠券</th><th>使用次数</th><th>累计优惠</th></tr></thead><tbody>';
+    topCoupons.forEach(function(c,idx){
+      var medal=idx===0?'🥇':idx===1?'🥈':'🥉';
+      html+='<tr><td>'+medal+' '+c.name+'</td><td>'+c.count+'次</td><td>'+fmt(c.totalDiscount)+'</td></tr>';
+    });
+    html+='</tbody></table>';
+  }else{
+    html+='<div style="text-align:center;padding:20px;color:var(--text-muted)">暂无用券记录</div>';
+  }
+
+  html+='<h4 style="margin:16px 0 8px">累计优惠统计</h4>';
+  if(Object.keys(couponUsage).length>0){
+    html+='<table class="data-table"><thead><tr><th>优惠券</th><th>使用次数</th><th>累计优惠</th></tr></thead><tbody>';
+    Object.keys(couponUsage).forEach(function(k){
+      var c=couponUsage[k];
+      html+='<tr><td>'+c.name+'</td><td>'+c.count+'次</td><td>'+fmt(c.totalDiscount)+'</td></tr>';
+    });
+    html+='</tbody></table>';
+  }else{
+    html+='<div style="text-align:center;padding:20px;color:var(--text-muted)">暂无优惠记录</div>';
+  }
+
+  App.showModal('会员消费分析 - '+m.name,html,'<button class="btn btn-outline" onclick="App.closeModal()">关闭</button>');
 };
 
 App.filterTransactions=function(){
   var rangeEl=document.getElementById('tx-filter-range');
   var phoneEl=document.getElementById('tx-filter-phone');
-  if(!state.txFilter)state.txFilter={range:'today',phone:''};
+  var productEl=document.getElementById('tx-filter-product');
+  var couponEl=document.getElementById('tx-filter-coupon');
+  var cashierEl=document.getElementById('tx-filter-cashier');
+  if(!state.txFilter)state.txFilter={range:'today',phone:'',product:'',coupon:'',cashier:''};
   state.txFilter.range=rangeEl?rangeEl.value:'today';
   state.txFilter.phone=phoneEl?phoneEl.value.trim():'';
+  state.txFilter.product=productEl?productEl.value.trim():'';
+  state.txFilter.coupon=couponEl?couponEl.value.trim():'';
+  state.txFilter.cashier=cashierEl?cashierEl.value.trim():'';
   navigate('transactions');
+};
+
+App.showSendCouponModal=function(couponId){
+  var coupon=state.coupons.find(function(c){return c.id===couponId});
+  if(!coupon)return;
+  var html='<div class="grid grid-2"><div class="form-group"><label>券名</label><input value="'+coupon.name+'" readonly></div><div class="form-group"><label>类型</label><input value="'+coupon.type+'" readonly></div><div class="form-group"><label>有效期至</label><input value="'+coupon.validTo+'" readonly></div><div class="form-group"><label>适用范围</label><input value="'+(coupon.category||'全品类')+'" readonly></div></div>';
+  html+='<div class="form-group"><label>发放对象类型</label><select id="send-coupon-type"><option value="会员等级">会员等级</option><option value="指定会员">指定会员</option></select></div>';
+  html+='<div class="form-group"><label>目标值</label><input type="text" id="send-coupon-target" placeholder="会员等级名称 或 会员手机号/姓名"></div>';
+  html+='<div class="form-group"><label>发放数量</label><input type="number" id="send-coupon-count" value="1" min="1"></div>';
+  var footer='<button class="btn btn-primary" onclick="App.confirmSendCoupon(\''+couponId+'\')">确认发放</button><button class="btn btn-outline" onclick="App.closeModal()">取消</button>';
+  App.showModal('批量发券 - '+coupon.name,html,footer);
+};
+
+App.confirmSendCoupon=function(couponId){
+  var typeEl=document.getElementById('send-coupon-type');
+  var targetEl=document.getElementById('send-coupon-target');
+  var countEl=document.getElementById('send-coupon-count');
+  if(!typeEl||!targetEl||!countEl){App.toast('请填写完整信息','warning');return}
+  var targetType=typeEl.value;
+  var targetValue=targetEl.value.trim();
+  var count=parseInt(countEl.value);
+  if(!targetValue){App.toast('请输入目标值','warning');return}
+  if(isNaN(count)||count<=0){App.toast('请输入有效数量','warning');return}
+  App.sendCouponToMembers(couponId,targetType,targetValue,count);
+  App.closeModal();
+};
+
+App.sendCouponToMembers=function(couponId,targetType,targetValue,count){
+  var coupon=state.coupons.find(function(c){return c.id===couponId});
+  if(!coupon){App.toast('优惠券不存在','warning');return}
+  var recipients=[];
+  if(targetType==='会员等级'){
+    recipients=state.members.filter(function(m){return m.level===targetValue}).slice(0,count);
+  }else if(targetType==='指定会员'){
+    var m=state.members.find(function(x){return x.phone===targetValue||x.name===targetValue});
+    if(m)recipients.push(m);
+  }
+  if(recipients.length===0){App.toast('未找到符合条件的会员','warning');return}
+  var cid=state.memberCouponInstances.length+1;
+  recipients.forEach(function(m){
+    var newInst={
+      id:'MCI'+String(cid++).padStart(6,'0'),
+      couponId:coupon.id,
+      memberId:m.id,
+      name:coupon.name,
+      type:coupon.type,
+      threshold:coupon.threshold,
+      discount:coupon.discount,
+      category:coupon.category||'',
+      validTo:coupon.validTo,
+      status:'可用',
+      source:'手动发放',
+      usedInTx:null,
+      receivedAt:now()
+    };
+    state.memberCouponInstances.push(newInst);
+  });
+  var campaign={
+    id:nextCampId(),
+    couponId:couponId,
+    couponName:coupon.name,
+    targetType:targetType,
+    targetValue:targetValue,
+    totalCount:count,
+    sentCount:recipients.length,
+    createdTime:now(),
+    creator:state.currentUser.name
+  };
+  state.campaigns.push(campaign);
+  initDistributionStats();
+  App.toast('已成功向'+recipients.length+'位会员发放'+coupon.name+'券','success');
+  if(state.currentPage==='promotions')navigate('promotions');
 };
 
 App.confirmPurchaseOrder=function(id){
@@ -646,7 +955,23 @@ App.confirmPurchaseOrder=function(id){
   order.status='已完成';
   order.completeTime=now();
   var product=state.products.find(function(p){return p.id===order.productId});
-  if(product){product.stock+=order.qty}
+  if(product){
+    var beforeStock=product.stock;
+    product.stock+=order.qty;
+    var logType=order.type==='采购'?'采购入库':'调拨入库';
+    var log={
+      id:nextInvLogId(),
+      productId:order.productId,
+      productName:order.productName,
+      type:logType,
+      qty:order.qty,
+      beforeStock:beforeStock,
+      afterStock:product.stock,
+      refId:order.id,
+      time:now()
+    };
+    state.inventoryLogs.push(log);
+  }
   App.toast('采购单 '+order.id+' 已确认完成，库存已更新','success');
   if(state.currentPage==='inventory')navigate('inventory');
 };
@@ -712,6 +1037,8 @@ App.exportTransactions=function(){App.toast('交易流水报表已导出','succe
 App.showReceptionRemarkModal=function(recId){App.showModal('添加备注','<div class="form-group"><label>备注内容</label><textarea id="reception-remark-input" rows="4" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:var(--radius);resize:vertical"></textarea></div>','<button class="btn btn-primary" onclick="App.confirmReceptionRemark(\''+recId+'\')">确认</button><button class="btn btn-outline" onclick="App.closeModal()">取消</button>')};
 App.confirmReceptionRemark=function(recId){var ta=document.getElementById('reception-remark-input');if(!ta||!ta.value.trim()){App.toast('请输入备注内容','warning');return}App.setReceptionRemark(recId,ta.value.trim());App.closeModal()};
 
+initMemberCoupons();
+
 window.renderDashboard=renderDashboard;
 window.renderInventory=renderInventory;
 window.renderPricing=renderPricing;
@@ -741,6 +1068,12 @@ window.nextTxId=nextTxId;
 window.filterTxPage=filterTxPage;
 window.showReceptionRemarkModal=showReceptionRemarkModal;
 window.confirmReceptionRemark=confirmReceptionRemark;
+window.isExpiringSoon=isExpiringSoon;
+window.switchMemberTab=App.switchMemberTab;
+window.showMemberPurchaseAnalysis=App.showMemberPurchaseAnalysis;
+window.showSendCouponModal=App.showSendCouponModal;
+window.confirmSendCoupon=App.confirmSendCoupon;
+window.sendCouponToMembers=App.sendCouponToMembers;
 
 document.addEventListener('DOMContentLoaded',function(){
   document.querySelectorAll('.nav-item').forEach(function(item){

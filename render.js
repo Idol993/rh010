@@ -88,12 +88,20 @@ else{h+='<table class="data-table"><thead><tr><th>商品</th><th>分类</th><th>
 alerts.forEach(function(p){var gap=p.safetyStock-p.stock;
 h+='<tr><td style="font-weight:500">'+p.name+'</td><td><span class="badge-tag info">'+p.category+'</span></td><td><span class="badge-tag danger">'+p.stock+'</span></td><td>'+p.safetyStock+'</td><td style="color:var(--danger);font-weight:600">'+gap+'</td><td>'+p.daysLeft+'天</td><td><button class="btn btn-sm btn-primary" onclick="App.triggerPurchase(\''+p.id+'\')">采购</button> <button class="btn btn-sm btn-outline" onclick="App.triggerTransfer(\''+p.id+'\')">调拨</button></td></tr>'});
 h+='</tbody></table>'}
-h+='<div class="card mt-16"><div class="card-header"><h3>预警单据</h3><span class="badge-tag info">'+state.purchaseOrders.length+'条</span></div><div class="card-body">';
-if(state.purchaseOrders.length===0){h+='<div style="text-align:center;color:var(--text-muted);padding:20px">暂无预警单据</div>'}
-else{h+='<table class="data-table"><thead><tr><th>单号</th><th>类型</th><th>商品</th><th>数量</th><th>金额</th><th>状态</th><th>来源</th><th>创建时间</th><th>完成时间</th><th>操作</th></tr></thead><tbody>';
-state.purchaseOrders.forEach(function(po){var typeBadge=po.type==='采购'?'info':'purple';var statusBadge=po.status==='待处理'?'warning':'success';var srcBadge=po.source==='自动预警'?'<span class="badge-tag danger">自动预警</span>':po.source==='手动采购'?'<span class="badge-tag info">手动采购</span>':po.source==='手动调拨'?'<span class="badge-tag purple">手动调拨</span>':po.source==='批量补货'?'<span class="badge-tag success">批量补货</span>':'<span class="badge-tag gray">'+(po.source||'-')+'</span>';
-var actionHtml=po.status==='待处理'?'<button class="btn btn-sm btn-primary" onclick="App.confirmPurchaseOrder(\''+po.id+'\')">确认处理</button>':po.status==='已完成'?'<span style="color:var(--success);font-weight:500">✓ 已完成</span>':'-';
-h+='<tr><td>'+po.id+'</td><td><span class="badge-tag '+typeBadge+'">'+po.type+'</span></td><td style="font-weight:500">'+po.productName+'</td><td>'+po.qty+'</td><td>'+fmt(po.total)+'</td><td><span class="badge-tag '+statusBadge+'">'+po.status+'</span></td><td>'+srcBadge+'</td><td>'+po.createTime+'</td><td>'+(po.completeTime||'<span style="color:var(--text-muted)">-</span>')+'</td><td>'+actionHtml+'</td></tr>'});
+var pendingOrders=state.purchaseOrders.filter(function(po){return po.status==='待处理'});
+var completedOrders=state.purchaseOrders.filter(function(po){return po.status==='已完成'});
+h+='<div class="card mt-16"><div class="card-header"><h3>待处理预警单据</h3><span class="badge-tag danger">'+pendingOrders.length+'条</span></div><div class="card-body">';
+if(pendingOrders.length===0){h+='<div style="text-align:center;color:var(--text-muted);padding:20px">暂无待处理预警单据</div>'}
+else{h+='<table class="data-table"><thead><tr><th>单号</th><th>类型</th><th>商品</th><th>数量</th><th>金额</th><th>状态</th><th>来源</th><th>创建时间</th><th>操作</th></tr></thead><tbody>';
+pendingOrders.forEach(function(po){var typeBadge=po.type==='采购'?'info':'purple';var statusBadge=po.status==='待处理'?'warning':'success';var srcBadge=po.source==='自动预警'?'<span class="badge-tag danger">自动预警</span>':po.source==='手动采购'?'<span class="badge-tag info">手动采购</span>':po.source==='手动调拨'?'<span class="badge-tag purple">手动调拨</span>':po.source==='批量补货'?'<span class="badge-tag success">批量补货</span>':'<span class="badge-tag gray">'+(po.source||'-')+'</span>';
+h+='<tr><td>'+po.id+'</td><td><span class="badge-tag '+typeBadge+'">'+po.type+'</span></td><td style="font-weight:500">'+po.productName+'</td><td>'+po.qty+'</td><td>'+fmt(po.total)+'</td><td><span class="badge-tag '+statusBadge+'">'+po.status+'</span></td><td>'+srcBadge+'</td><td>'+po.createTime+'</td><td><button class="btn btn-sm btn-primary" onclick="App.confirmPurchaseOrder(\''+po.id+'\')">确认处理</button></td></tr>'});
+h+='</tbody></table>'}
+h+='</div></div>';
+h+='<div class="card" style="margin-top:16px"><div class="card-header"><h3>已完成处理记录</h3><span class="badge-tag success">'+completedOrders.length+'条</span></div><div class="card-body">';
+if(completedOrders.length===0){h+='<div style="text-align:center;color:var(--text-muted);padding:20px">暂无已完成处理记录</div>'}
+else{h+='<table class="data-table"><thead><tr><th>单号</th><th>类型</th><th>商品</th><th>数量</th><th>金额</th><th>状态</th><th>来源</th><th>创建时间</th><th>完成时间</th></tr></thead><tbody>';
+completedOrders.forEach(function(po){var typeBadge=po.type==='采购'?'info':'purple';var statusBadge=po.status==='待处理'?'warning':'success';var srcBadge=po.source==='自动预警'?'<span class="badge-tag danger">自动预警</span>':po.source==='手动采购'?'<span class="badge-tag info">手动采购</span>':po.source==='手动调拨'?'<span class="badge-tag purple">手动调拨</span>':po.source==='批量补货'?'<span class="badge-tag success">批量补货</span>':'<span class="badge-tag gray">'+(po.source||'-')+'</span>';
+h+='<tr><td>'+po.id+'</td><td><span class="badge-tag '+typeBadge+'">'+po.type+'</span></td><td style="font-weight:500">'+po.productName+'</td><td>'+po.qty+'</td><td>'+fmt(po.total)+'</td><td><span class="badge-tag '+statusBadge+'">'+po.status+'</span></td><td>'+srcBadge+'</td><td>'+po.createTime+'</td><td>'+(po.completeTime||'<span style="color:var(--text-muted)">-</span>')+'</td></tr>'});
 h+='</tbody></table>'}
 h+='</div></div>';
 return h}
@@ -183,11 +191,9 @@ else{expiring.forEach(function(p){var disc=p.daysLeft<=3?0.5:0.8;var newPrice=(p
 h+='<div class="flex-between" style="margin-bottom:10px;padding:10px;border:1px solid var(--border);border-radius:var(--radius)"><div><span style="font-weight:500">'+p.name+'</span> <span class="badge-tag '+badge+'">剩余'+p.daysLeft+'天</span><br>'+priceDisplay+'</div>'+actionBtn+'</div>'})}
 h+='</div></div>';
 h+='<div class="card"><div class="card-header"><h3>优惠券管理</h3></div><div class="card-body">';
-state.coupons.forEach(function(c){var usage=((c.used/c.total)*100).toFixed(1);var typeBadge=c.type==='折扣'?'info':'purple';
+state.coupons.forEach(function(c){var usedCount=state.memberCouponInstances.filter(function(mci){return mci.couponId===c.id&&mci.status==='已核销'}).length;var totalCount=state.memberCouponInstances.filter(function(mci){return mci.couponId===c.id}).length;var usage=totalCount>0?((usedCount/totalCount*100).toFixed(1)):0;var typeBadge=c.type==='折扣'?'info':'purple';
 var scopeText=c.category?c.category:'全品类';
-var usedCount=c.used;
-var totalCount=c.total;
-h+='<div style="margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:var(--radius)"><div class="flex-between" style="margin-bottom:6px"><span style="font-weight:600">'+c.name+'</span><span class="badge-tag '+typeBadge+'">'+c.type+'</span></div><div class="flex-between" style="font-size:12px;color:var(--text-secondary);margin-bottom:4px"><span>有效期至'+c.validTo+'</span><span>核销统计：'+usedCount+'/'+totalCount+'</span></div><div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">适用范围：<span class="badge-tag '+(c.category?'info':'success')+'" style="font-size:10px">'+scopeText+'</span></div><div class="progress-bar"><div class="fill blue" style="width:'+usage+'%"></div></div></div>'});
+h+='<div style="margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:var(--radius)"><div class="flex-between" style="margin-bottom:6px"><span style="font-weight:600">'+c.name+'</span><span class="badge-tag '+typeBadge+'">'+c.type+'</span></div><div class="flex-between" style="font-size:12px;color:var(--text-secondary);margin-bottom:4px"><span>有效期至'+c.validTo+'</span><span>核销统计：'+usedCount+'/'+totalCount+'</span></div><div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">适用范围：<span class="badge-tag '+(c.category?'info':'success')+'" style="font-size:10px">'+scopeText+'</span></div><div class="flex-between"><div class="progress-bar" style="flex:1;margin-right:12px"><div class="fill blue" style="width:'+usage+'%"></div></div><button class="btn btn-sm btn-primary" onclick="App.showSendCouponModal(\''+c.id+'\')">发券</button></div></div>'});
 h+='</div></div></div>';
 h+='<div class="card mb-20"><div class="card-header"><h3>已生效促销</h3><span class="badge-tag success">'+state.activePromotions.length+'项</span></div><div class="card-body">';
 if(state.activePromotions.length===0){h+='<div style="text-align:center;color:var(--text-muted);padding:20px">暂无生效中的促销</div>'}
@@ -196,10 +202,16 @@ state.activePromotions.forEach(function(ap){
 h+='<tr><td style="font-weight:500">'+ap.productName+'</td><td><span class="badge-tag warning">'+ap.type+'</span></td><td>'+fmt(ap.origPrice)+'</td><td style="color:var(--danger);font-weight:600">'+fmt(ap.promoPrice)+'</td><td>'+ap.discountLabel+'</td><td>'+ap.createTime+'</td></tr>'});
 h+='</tbody></table>'}
 h+='</div></div>';
+h+='<h3 style="margin-top:24px">发券记录</h3>';
+h+='<div class="card"><div class="card-body"><table class="data-table"><thead><tr><th>活动编号</th><th>券名</th><th>发放对象</th><th>发放数量</th><th>已核销</th><th>未使用</th><th>创建时间</th><th>创建人</th></tr></thead><tbody>';
+if(!state.campaigns||state.campaigns.length===0){h+='<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px">暂无发券记录</td></tr>'}
+else{state.campaigns.forEach(function(camp){var coupon=state.coupons.find(function(c){return c.id===camp.couponId});var couponName=coupon?coupon.name:'-';var targetText=camp.targetType+': '+camp.targetValue;var usedCount=state.memberCouponInstances.filter(function(mci){return mci.couponId===camp.couponId&&mci.status==='已核销'}).length;var unusedCount=state.memberCouponInstances.filter(function(mci){return mci.couponId===camp.couponId&&mci.status==='可用'}).length;
+h+='<tr><td>'+camp.id+'</td><td style="font-weight:500">'+couponName+'</td><td>'+targetText+'</td><td>'+camp.quantity+'</td><td><span style="color:var(--success)">'+usedCount+'</span></td><td><span style="color:var(--warning)">'+unusedCount+'</span></td><td>'+camp.createTime+'</td><td>'+camp.creator+'</td></tr>'});}
+h+='</tbody></table></div></div>';
 return h}
 
 function renderTransactions(){
-if(!state.txFilter)state.txFilter={range:'today',phone:''};
+if(!state.txFilter)state.txFilter={range:'today',phone:'',product:'',coupon:'',cashier:''};
 var today=new Date();
 var todayStr=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
 var weekAgo=new Date(today.getTime()-7*24*60*60*1000);
@@ -219,13 +231,15 @@ var filtered=state.transactions.filter(function(tx){
 var todayTxns=state.transactions.filter(function(tx){return tx.time.indexOf(todayStr)===0});
 var todayRevenue=todayTxns.reduce(function(s,tx){return s+tx.finalAmount},0);
 var todayDiscount=todayTxns.reduce(function(s,tx){return s+tx.discount},0);
+var totalDiscount=state.transactions.reduce(function(s,tx){return s+tx.discount},0);
 var h='<div class="page-header"><h2>交易流水</h2><div class="actions"><button class="btn btn-outline" onclick="App.exportTransactions()">导出</button></div></div>';
-h+='<div class="grid grid-3 mb-20">';
+h+='<div class="grid grid-4 mb-20">';
 h+='<div class="stat-card"><div class="stat-icon blue"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></div><div class="stat-label">今日交易数</div><div class="stat-value">'+todayTxns.length+'</div></div>';
 h+='<div class="stat-card"><div class="stat-icon green"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="stat-label">今日营收</div><div class="stat-value">'+fmt(todayRevenue)+'</div></div>';
 h+='<div class="stat-card"><div class="stat-icon orange"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg></div><div class="stat-label">今日优惠</div><div class="stat-value">'+fmt(todayDiscount)+'</div></div>';
+h+='<div class="stat-card"><div class="stat-icon purple"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div><div class="stat-label">累计优惠</div><div class="stat-value">'+fmt(totalDiscount)+'</div></div>';
 h+='</div>';
-h+='<div class="flex-between mb-16"><div class="flex gap-8"><select id="tx-filter-range" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius)"><option value="today"'+(state.txFilter.range==='today'?' selected':'')+'>今天</option><option value="week"'+(state.txFilter.range==='week'?' selected':'')+'>本周</option><option value="all"'+(state.txFilter.range==='all'?' selected':'')+'>全部</option></select><div class="search-bar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="tx-filter-phone" placeholder="会员手机号" value="'+(state.txFilter.phone||'')+'"></div><button class="btn btn-primary" onclick="filterTxPage()">筛选</button></div></div>';
+h+='<div class="flex-between mb-16"><div class="flex gap-8"><select id="tx-filter-range" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius)"><option value="today"'+(state.txFilter.range==='today'?' selected':'')+'>今天</option><option value="week"'+(state.txFilter.range==='week'?' selected':'')+'>本周</option><option value="all"'+(state.txFilter.range==='all'?' selected':'')+'>全部</option></select><div class="search-bar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="tx-filter-phone" placeholder="会员手机号" value="'+(state.txFilter.phone||'')+'"></div><input id="tx-filter-product" type="text" placeholder="输入商品名模糊搜索" value="'+(state.txFilter.product||'')+'" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius)"><input id="tx-filter-coupon" type="text" placeholder="输入券名模糊搜索" value="'+(state.txFilter.coupon||'')+'" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius)"><input id="tx-filter-cashier" type="text" placeholder="输入收银员姓名" value="'+(state.txFilter.cashier||'')+'" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius)"><button class="btn btn-primary" onclick="filterTxPage()">筛选</button></div></div>';
 h+='<table class="data-table"><thead><tr><th>交易编号</th><th>时间</th><th>收银员</th><th>会员</th><th>商品数</th><th>原价</th><th>优惠</th><th>实收</th><th>积分</th><th>操作</th></tr></thead><tbody>';
 if(filtered.length===0){h+='<tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:20px">暂无交易记录</td></tr>'}
 else{filtered.forEach(function(tx){
@@ -239,9 +253,15 @@ return h}
 function filterTxPage(){
 var rangeEl=document.getElementById('tx-filter-range');
 var phoneEl=document.getElementById('tx-filter-phone');
-if(!state.txFilter)state.txFilter={range:'today',phone:''};
+var productEl=document.getElementById('tx-filter-product');
+var couponEl=document.getElementById('tx-filter-coupon');
+var cashierEl=document.getElementById('tx-filter-cashier');
+if(!state.txFilter)state.txFilter={range:'today',phone:'',product:'',coupon:'',cashier:''};
 state.txFilter.range=rangeEl?rangeEl.value:'today';
 state.txFilter.phone=phoneEl?phoneEl.value.trim():'';
+state.txFilter.product=productEl?productEl.value.trim():'';
+state.txFilter.coupon=couponEl?couponEl.value.trim():'';
+state.txFilter.cashier=cashierEl?cashierEl.value.trim():'';
 navigate('transactions');
 }
 
