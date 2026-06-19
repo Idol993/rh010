@@ -67,7 +67,20 @@ function fmt(n){return '¥'+Number(n).toFixed(2)}
 function now(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')}
 function calcRepl(p){var m=new Date().getMonth();var total=p.sales30d.reduce(function(a,b){return a+b},0);var avg=total/30;var sf=SF[p.category]?SF[p.category][m]:1;var rp=Math.ceil((avg*sf*3)+(avg*7));var sq=Math.max(0,rp-p.stock);return{avg:avg.toFixed(1),sf:sf.toFixed(2),rp:rp,sq:sq}}
 
-function calcCouponSaving(coupon,total){
+function calcCatSubtotal(cart,cartItems,category){
+  var s=0;
+  cart.forEach(function(item){
+    var prod=cartItems.find(function(p){return p.id===item.id});
+    if(prod&&(!category||prod.category===category)){
+      s+=item.price*item.qty;
+    }
+  });
+  return s;
+}
+
+function calcCouponSaving(coupon,cart,cartItems){
+  var total=calcCatSubtotal(cart,cartItems,coupon.category||'');
+  if(total<=0)return 0;
   if(coupon.type==='满减'){
     if(total<coupon.threshold)return 0;
     return coupon.discount;
@@ -78,17 +91,23 @@ function calcCouponSaving(coupon,total){
   return 0;
 }
 
-function findBestCoupon(total){
+function isCouponApplicable(coupon,cart,cartItems){
+  var catTotal=calcCatSubtotal(cart,cartItems,coupon.category||'');
+  if(catTotal<=0)return false;
+  if(coupon.type==='满减')return catTotal>=coupon.threshold;
+  return true;
+}
+
+function findBestCoupon(cart,cartItems){
   if(!state.selectedMember)return null;
   var applicable=state.coupons.filter(function(c){
     if(state.appliedCoupon&&state.appliedCoupon.id===c.id)return false;
-    if(c.type==='满减')return total>=c.threshold;
-    return true;
+    return isCouponApplicable(c,cart,cartItems);
   });
   if(!applicable.length)return null;
-  var best=applicable[0],bestSaving=calcCouponSaving(best,total);
+  var best=applicable[0],bestSaving=calcCouponSaving(best,cart,cartItems);
   for(var i=1;i<applicable.length;i++){
-    var s=calcCouponSaving(applicable[i],total);
+    var s=calcCouponSaving(applicable[i],cart,cartItems);
     if(s>bestSaving){best=applicable[i];bestSaving=s}
   }
   return bestSaving>0?best:null;
@@ -98,26 +117,53 @@ function renderAlerts(){var l=document.getElementById('alert-list');if(!l)return
 
 var PN={dashboard:'店长看板',inventory:'进销存管理',pricing:'电子价签',checkout:'收银台',members:'会员管理',promotions:'促销管理',lossprevention:'防损系统',finance:'财务对账',permissions:'权限管理'};
 
+function hasPendingOrder(productId){
+  return state.purchaseOrders.some(function(po){return po.productId===productId&&po.status==='待处理'});
+}
+
+function autoGeneratePurchaseAlerts(){
+  var lowStock=state.products.filter(function(p){return p.stock<p.safetyStock});
+  var createdCount=0;
+  lowStock.forEach(function(p){
+    if(hasPendingOrder(p.id))return;
+    var gap=p.safetyStock-p.stock;
+    var r=calcRepl(p);
+    if(gap<=0&&r.sq<=0)return;
+    var orderType=r.sq>gap?'采购':'调拨';
+    var qty=orderType==='采购'?r.sq:gap;
+    if(qty<=0)return;
+    var order={id:nextOrderId(),type:orderType,productId:p.id,productName:p.name,category:p.category,qty:qty,price:p.price,total:qty*p.price,status:'待处理',createTime:now(),source:'自动预警'};
+    state.purchaseOrders.push(order);
+    createdCount++;
+  });
+  return createdCount;
+}
+
 function navigate(page){
   var R={dashboard:renderDashboard,inventory:renderInventory,pricing:renderPricing,checkout:renderCheckout,members:renderMembers,promotions:renderPromotions,lossprevention:renderLoss,finance:renderFinance,permissions:renderPermissions};
   if(!R[page])return;
   var role=ROLES[state.currentUser.role];
   if(role.perms.indexOf(page)===-1){App.toast('您没有访问该模块的权限','warning');return}
   state.currentPage=page;
+  if(page==='inventory'){
+    var cnt=autoGeneratePurchaseAlerts();
+    if(cnt>0){setTimeout(function(){App.toast('自动生成'+cnt+'张库存预警单据','info')},200)}
+  }
   document.getElementById('page-container').innerHTML=R[page]();
   document.querySelectorAll('.nav-item').forEach(function(n){n.classList.toggle('active',n.dataset.page===page)});
   document.getElementById('breadcrumb').innerHTML='<span>首页</span><span class="sep">/</span><span>'+(PN[page]||page)+'</span>';
   if(page==='inventory')initInvTabs();
 }
 
-function initInvTabs(){var tabs=document.querySelectorAll('#inv-tabs .tab');if(!tabs.length)return;tabs.forEach(function(tab){tab.addEventListener('click',function(){tabs.forEach(function(t){t.classList.remove('active')});tab.classList.add('active');var t=tab.dataset.tab;var c=document.getElementById('inv-content');if(t==='all')c.innerHTML=renderInvAll();else if(t==='inbound')c.innerHTML=renderInvInbound();else if(t==='replenish')c.innerHTML=renderInvReplenish();else if(t==='alert')c.innerHTML=renderInvAlert()})})}
+function initInvTabs(){var tabs=document.querySelectorAll('#inv-tabs .tab');if(!tabs.length)return;tabs.forEach(function(tab){tab.addEventListener('click',function(){tabs.forEach(function(t){t.classList.remove('active')});tab.classList.add('active');var t=tab.dataset.tab;var c=document.getElementById('inv-content');if(t==='alert'){var cnt=autoGeneratePurchaseAlerts();if(cnt>0){setTimeout(function(){App.toast('自动生成'+cnt+'张库存预警单据','info')},100)}c.innerHTML=renderInvAlert()}else if(t==='all')c.innerHTML=renderInvAll();else if(t==='inbound')c.innerHTML=renderInvInbound();else if(t==='replenish')c.innerHTML=renderInvReplenish()})})}
 
 function updateCartUI(){
   var cartEl=document.getElementById('checkout-cart');
   var sumEl=document.getElementById('checkout-summary');
   var couponSec=document.getElementById('checkout-coupons-section');
   if(!cartEl)return;
-  if(state.checkoutCart.length===0){
+  var cart=state.checkoutCart,cartItems=state.products;
+  if(cart.length===0){
     state.appliedCoupon=null;state.checkoutDiscount=0;
     cartEl.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-muted)">购物车为空，请扫码添加商品</div>';
     sumEl.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-muted)">添加商品后显示结算信息</div>';
@@ -125,11 +171,11 @@ function updateCartUI(){
   }
   var subtotal=0;
   cartEl.innerHTML='<table class="data-table"><thead><tr><th>商品</th><th>单价</th><th>数量</th><th>小计</th><th></th></tr></thead><tbody>'+
-    state.checkoutCart.map(function(item,i){
+    cart.map(function(item,i){
       var unitPrice=item.price;
       var sub=unitPrice*item.qty;subtotal+=sub;
       var promoLabel='';
-      var prod=state.products.find(function(p){return p.id===item.id});
+      var prod=cartItems.find(function(p){return p.id===item.id});
       if(prod&&prod.activePromo){
         promoLabel=' <span class="badge-tag warning" style="font-size:10px">'+prod.activePromo.discountLabel+'</span>';
       }
@@ -139,14 +185,19 @@ function updateCartUI(){
   var discount=0;
   var couponLabel='';
   if(state.appliedCoupon){
-    discount=calcCouponSaving(state.appliedCoupon,subtotal);
-    couponLabel=state.appliedCoupon.name;
-  }else if(state.selectedMember){
-    var best=findBestCoupon(subtotal);
+    if(isCouponApplicable(state.appliedCoupon,cart,cartItems)){
+      discount=calcCouponSaving(state.appliedCoupon,cart,cartItems);
+      couponLabel=state.appliedCoupon.name+(state.appliedCoupon.category?'（'+state.appliedCoupon.category+'）':'');
+    }else{
+      state.appliedCoupon=null;
+    }
+  }
+  if(!state.appliedCoupon&&state.selectedMember){
+    var best=findBestCoupon(cart,cartItems);
     if(best){
       state.appliedCoupon=best;
-      discount=calcCouponSaving(best,subtotal);
-      couponLabel=best.name+'（自动推荐）';
+      discount=calcCouponSaving(best,cart,cartItems);
+      couponLabel=best.name+(best.category?'（'+best.category+'）':'')+'（自动推荐）';
     }
   }
   state.checkoutDiscount=discount;
@@ -167,24 +218,26 @@ function updateCartUI(){
   sumEl.innerHTML=sumHtml;
 
   if(state.selectedMember&&couponSec){
-    var applicable=state.coupons.filter(function(c){
-      if(c.type==='满减'&&subtotal<c.threshold)return false;
-      return true;
-    });
-    couponSec.style.display=applicable.length?'block':'none';
+    var applicableList=state.coupons.filter(function(c){return isCouponApplicable(c,cart,cartItems)});
+    couponSec.style.display=applicableList.length?'block':'none';
     var cHtml='';
-    applicable.forEach(function(c){
-      var saving=calcCouponSaving(c,subtotal);
+    state.coupons.forEach(function(c){
+      var applicable=isCouponApplicable(c,cart,cartItems);
+      var saving=calcCouponSaving(c,cart,cartItems);
       var isApplied=state.appliedCoupon&&state.appliedCoupon.id===c.id;
-      cHtml+='<div class="flex-between" style="padding:8px 0;border-bottom:1px solid var(--border)"><div><span style="font-weight:500">'+c.name+'</span>';
-      if(isApplied){
-        cHtml+=' <span class="badge-tag success" style="font-size:10px">已使用</span>';
-      }
-      cHtml+='<br><span style="font-size:11px;color:var(--text-muted)">可省'+fmt(saving)+'</span></div>';
+      var catTag=c.category?' <span class="badge-tag info" style="font-size:10px">'+c.category+'</span>':'';
+      cHtml+='<div class="flex-between" style="padding:8px 0;border-bottom:1px solid var(--border)"><div><span style="font-weight:500">'+c.name+'</span>'+catTag;
+      if(isApplied){cHtml+=' <span class="badge-tag success" style="font-size:10px">已使用</span>'}
+      if(!applicable){cHtml+=' <span class="badge-tag gray" style="font-size:10px">不适用</span>'}
+      cHtml+='<br><span style="font-size:11px;color:var(--text-muted)">';
+      if(applicable){cHtml+='可省'+fmt(saving)}else{cHtml+='无适用商品或不满足条件'}
+      cHtml+='</span></div>';
       if(isApplied){
         cHtml+='<span style="color:var(--success);font-size:12px;font-weight:500">已抵扣</span>';
-      }else{
+      }else if(applicable){
         cHtml+='<button class="btn btn-sm btn-primary" onclick="App.applyCoupon(\''+c.id+'\')">使用</button>';
+      }else{
+        cHtml+='<span style="color:var(--text-muted);font-size:12px">-</span>';
       }
       cHtml+='</div>';
     });
@@ -205,21 +258,35 @@ App.showProductDetail=function(id){var p=state.products.find(function(x){return 
 
 App.triggerPurchase=function(id){
   var p=state.products.find(function(x){return x.id===id});if(!p)return;
+  if(hasPendingOrder(p.id)){
+    App.toast(p.name+'已有待处理单据，无需重复生成','warning');
+    if(state.currentPage==='inventory')navigate('inventory');
+    return;
+  }
   var r=calcRepl(p);
-  var order={id:nextOrderId(),type:'采购',productId:p.id,productName:p.name,category:p.category,qty:r.sq,price:p.price,total:r.sq*p.price,status:'待处理',createTime:now(),source:'库存预警'};
+  if(r.sq<=0){App.toast(p.name+'暂不需要采购','warning');return}
+  var order={id:nextOrderId(),type:'采购',productId:p.id,productName:p.name,category:p.category,qty:r.sq,price:p.price,total:r.sq*p.price,status:'待处理',createTime:now(),source:'手动采购'};
   state.purchaseOrders.push(order);
   App.toast('已生成采购单 '+order.id+'：'+p.name+' × '+r.sq,'success');
+  if(state.currentPage==='inventory')navigate('inventory');
 };
 
 App.triggerTransfer=function(id){
   var p=state.products.find(function(x){return x.id===id});if(!p)return;
+  if(hasPendingOrder(p.id)){
+    App.toast(p.name+'已有待处理单据，无需重复生成','warning');
+    if(state.currentPage==='inventory')navigate('inventory');
+    return;
+  }
   var gap=p.safetyStock-p.stock;
-  var order={id:nextOrderId(),type:'调拨',productId:p.id,productName:p.name,category:p.category,qty:gap,price:p.price,total:gap*p.price,status:'待处理',createTime:now(),source:'库存预警'};
+  if(gap<=0){App.toast(p.name+'库存充足，无需调拨','warning');return}
+  var order={id:nextOrderId(),type:'调拨',productId:p.id,productName:p.name,category:p.category,qty:gap,price:p.price,total:gap*p.price,status:'待处理',createTime:now(),source:'手动调拨'};
   state.purchaseOrders.push(order);
   App.toast('已生成调拨单 '+order.id+'：'+p.name+' × '+gap,'info');
+  if(state.currentPage==='inventory')navigate('inventory');
 };
 
-App.batchReplenish=function(){var items=state.products.filter(function(p){return calcRepl(p).sq>0});items.forEach(function(p){var r=calcRepl(p);state.purchaseOrders.push({id:nextOrderId(),type:'采购',productId:p.id,productName:p.name,category:p.category,qty:r.sq,price:p.price,total:r.sq*p.price,status:'待处理',createTime:now(),source:'批量补货'})});App.toast('已生成批量采购单，共'+items.length+'项商品','success')};
+App.batchReplenish=function(){var items=state.products.filter(function(p){return calcRepl(p).sq>0&&!hasPendingOrder(p.id)});items.forEach(function(p){var r=calcRepl(p);state.purchaseOrders.push({id:nextOrderId(),type:'采购',productId:p.id,productName:p.name,category:p.category,qty:r.sq,price:p.price,total:r.sq*p.price,status:'待处理',createTime:now(),source:'批量补货'})});App.toast('已生成批量采购单，共'+items.length+'项商品（已跳过有未处理单据的商品）','success');if(state.currentPage==='inventory')navigate('inventory')};
 
 App.syncAllPriceTags=function(){state.products.forEach(function(p){p.priceTagSynced=true});App.toast('全部'+state.products.length+'个电子价签已同步完成','success');navigate('pricing')};
 App.syncPriceTag=function(id){var p=state.products.find(function(x){return x.id===id});if(p){p.priceTagSynced=true;App.toast(p.name+'价签已同步','success');navigate('pricing')}};
@@ -233,7 +300,8 @@ function createReception(member,method){
   member.receptionStatus='待接待';
   member.receptionTime=null;
   member.assignedGuide=null;
-  var rec={id:'R'+String(state.receptions.length+1).padStart(4,'0'),memberId:member.id,memberName:member.name,memberLevel:member.level,method:method,status:'待接待',createTime:now(),guideName:null,guideId:null};
+  var enterTime=now();
+  var rec={id:'R'+String(state.receptions.length+1).padStart(4,'0'),memberId:member.id,memberName:member.name,memberLevel:member.level,method:method,status:'待接待',enterTime:enterTime,completeTime:null,createTime:enterTime,guideName:null,guideId:null};
   state.receptions.push(rec);
   state.alerts.unshift({id:Date.now(),type:'info',title:'会员到店('+method+')',desc:member.level+' '+member.name+'已进店，请导购接待',time:'刚刚'});
   renderAlerts();
@@ -269,14 +337,16 @@ App.sendGuideNotification=function(memberId){
   var m=state.members.find(function(x){return x.id===memberId});
   if(!m)return;
   var guide=GUIDES[0];
+  var compTime=now();
   m.receptionStatus='已接待';
-  m.receptionTime=now();
+  m.receptionTime=compTime;
   m.assignedGuide=guide.name;
   var rec=state.receptions.find(function(r){return r.memberId===memberId&&r.status==='待接待'});
   if(rec){
     rec.status='已接待';
     rec.guideName=guide.name;
     rec.guideId=guide.id;
+    rec.completeTime=compTime;
   }
   App.toast('已通知'+guide.name+'接待会员：'+m.name,'success');
   if(state.currentPage==='members')navigate('members');
@@ -325,7 +395,16 @@ App.clearCart=function(){state.checkoutCart=[];state.selectedMember=null;state.a
 
 App.checkoutIdentifyMember=function(){
   var inp=document.getElementById('checkout-member-input');if(!inp||!inp.value){App.toast('请输入会员手机号','warning');return}
-  var m=state.members[Math.floor(Math.random()*state.members.length)];
+  var phone=inp.value.trim();
+  var m=state.members.find(function(x){return x.phone===phone});
+  if(!m){
+    state.selectedMember=null;state.appliedCoupon=null;
+    var info=document.getElementById('checkout-member-info');
+    if(info)info.innerHTML='<div style="margin-top:8px;padding:10px;background:var(--danger-light);color:var(--danger);border-radius:var(--radius)">未找到该手机号对应的会员，请确认后重试</div>';
+    App.toast('未找到该手机号对应的会员','warning');
+    updateCartUI();
+    return;
+  }
   state.selectedMember=m;state.appliedCoupon=null;
   var info=document.getElementById('checkout-member-info');
   if(info){var lc=m.level==='钻石会员'?'purple':m.level==='金卡会员'?'warning':m.level==='银卡会员'?'info':'gray';info.innerHTML='<div class="card" style="margin-top:8px"><div class="card-body" style="padding:12px"><div class="flex gap-8" style="align-items:center"><div style="width:32px;height:32px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600">'+m.name[0]+'</div><div><strong>'+m.name+'</strong> <span class="badge-tag '+lc+'">'+m.level+'</span><br><span style="font-size:12px;color:var(--text-secondary)">积分'+m.points+' · '+m.coupons+'张优惠券</span></div></div></div></div>'}
@@ -336,6 +415,10 @@ App.checkoutIdentifyMember=function(){
 App.applyCoupon=function(cid){
   var c=state.coupons.find(function(x){return x.id===cid});
   if(!c)return;
+  if(!isCouponApplicable(c,state.checkoutCart,state.products)){
+    App.toast(c.category?(c.category+'无适用商品或不满足条件'):'不满足优惠券使用条件','warning');
+    return;
+  }
   state.appliedCoupon=c;
   App.toast('已使用优惠券：'+c.name,'success');
   updateCartUI();
@@ -347,18 +430,22 @@ App.completeCheckout=function(){
   var discount=state.checkoutDiscount;
   var finalAmount=subtotal-discount;
   var pts=Math.floor(finalAmount);
+  var couponUsed=state.appliedCoupon;
+  var couponName='';
+  if(couponUsed&&discount>0){
+    couponName=couponUsed.name+(couponUsed.category?'（'+couponUsed.category+'）':'');
+  }
   var receipt=document.getElementById('checkout-receipt');
   if(receipt){
     receipt.style.display='block';
     var rHtml='<div class="receipt"><div class="receipt-header"><h4>阳光花园店</h4><div>'+new Date().toLocaleString()+'</div></div>';
     state.checkoutCart.forEach(function(i){
-      var prod=state.products.find(function(p){return p.id===i.id});
       rHtml+='<div class="receipt-line"><span>'+i.name+' ×'+i.qty+'</span><span>'+fmt(i.price*i.qty)+'</span></div>';
     });
     rHtml+='<div style="border-top:1px dashed var(--border);margin:6px 0"></div>';
     rHtml+='<div class="receipt-line"><span>商品合计</span><span>'+fmt(subtotal)+'</span></div>';
-    if(discount>0){
-      rHtml+='<div class="receipt-line" style="color:var(--danger)"><span>优惠('+state.appliedCoupon.name+')</span><span>-'+fmt(discount)+'</span></div>';
+    if(discount>0&&couponName){
+      rHtml+='<div class="receipt-line" style="color:var(--danger)"><span>优惠('+couponName+')</span><span>-'+fmt(discount)+'</span></div>';
     }
     rHtml+='<div class="receipt-total"><div class="receipt-line"><span>应付</span><span>'+fmt(finalAmount)+'</span></div></div>';
     if(state.selectedMember){
@@ -370,8 +457,12 @@ App.completeCheckout=function(){
   if(state.selectedMember){
     state.selectedMember.points+=pts;
     state.selectedMember.totalSpent+=finalAmount;
-    state.selectedMember.coupons=Math.max(0,state.selectedMember.coupons-1);
-    App.toast('结算成功！应付'+fmt(finalAmount)+'，会员获得'+pts+'积分','success');
+    if(couponUsed&&discount>0){
+      state.selectedMember.coupons=Math.max(0,state.selectedMember.coupons-1);
+    }
+    var sucMsg='结算成功！应付'+fmt(finalAmount)+'，会员获得'+pts+'积分';
+    if(couponUsed&&discount>0){sucMsg+='，已使用：'+couponName}
+    App.toast(sucMsg,'success');
   }else{
     App.toast('结算成功！金额：'+fmt(finalAmount),'success');
   }

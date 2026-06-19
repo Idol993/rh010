@@ -90,9 +90,9 @@ h+='<tr><td style="font-weight:500">'+p.name+'</td><td><span class="badge-tag in
 h+='</tbody></table>'}
 h+='<div class="card mt-16"><div class="card-header"><h3>预警单据</h3><span class="badge-tag info">'+state.purchaseOrders.length+'条</span></div><div class="card-body">';
 if(state.purchaseOrders.length===0){h+='<div style="text-align:center;color:var(--text-muted);padding:20px">暂无预警单据</div>'}
-else{h+='<table class="data-table"><thead><tr><th>单号</th><th>类型</th><th>商品</th><th>数量</th><th>金额</th><th>状态</th><th>创建时间</th></tr></thead><tbody>';
-state.purchaseOrders.forEach(function(po){var typeBadge=po.type==='采购'?'info':'purple';var statusBadge=po.status==='待处理'?'warning':'success';
-h+='<tr><td>'+po.id+'</td><td><span class="badge-tag '+typeBadge+'">'+po.type+'</span></td><td style="font-weight:500">'+po.productName+'</td><td>'+po.qty+'</td><td>'+fmt(po.total)+'</td><td><span class="badge-tag '+statusBadge+'">'+po.status+'</span></td><td>'+po.createTime+'</td></tr>'});
+else{h+='<table class="data-table"><thead><tr><th>单号</th><th>类型</th><th>商品</th><th>数量</th><th>金额</th><th>状态</th><th>来源</th><th>创建时间</th></tr></thead><tbody>';
+state.purchaseOrders.forEach(function(po){var typeBadge=po.type==='采购'?'info':'purple';var statusBadge=po.status==='待处理'?'warning':'success';var srcBadge=po.source==='自动预警'?'<span class="badge-tag danger">自动预警</span>':po.source==='手动采购'?'<span class="badge-tag info">手动采购</span>':po.source==='手动调拨'?'<span class="badge-tag purple">手动调拨</span>':po.source==='批量补货'?'<span class="badge-tag success">批量补货</span>':'<span class="badge-tag gray">'+(po.source||'-')+'</span>';
+h+='<tr><td>'+po.id+'</td><td><span class="badge-tag '+typeBadge+'">'+po.type+'</span></td><td style="font-weight:500">'+po.productName+'</td><td>'+po.qty+'</td><td>'+fmt(po.total)+'</td><td><span class="badge-tag '+statusBadge+'">'+po.status+'</span></td><td>'+srcBadge+'</td><td>'+po.createTime+'</td></tr>'});
 h+='</tbody></table>'}
 h+='</div></div>';
 return h}
@@ -150,9 +150,9 @@ h+='<div class="flex-between" style="margin-bottom:8px;padding:8px;border:1px so
 h+='</div></div></div>';
 h+='<div class="card mb-20"><div class="card-header"><h3>导购接待提醒</h3><span class="badge-tag info">'+state.receptions.length+'条</span></div><div class="card-body">';
 if(state.receptions.length===0){h+='<div style="text-align:center;color:var(--text-muted);padding:20px">暂无接待记录</div>'}
-else{h+='<table class="data-table"><thead><tr><th>会员</th><th>等级</th><th>识别方式</th><th>状态</th><th>导购</th><th>时间</th></tr></thead><tbody>';
+else{h+='<table class="data-table"><thead><tr><th>会员</th><th>等级</th><th>识别方式</th><th>状态</th><th>导购</th><th>进店时间</th><th>接待完成时间</th></tr></thead><tbody>';
 state.receptions.forEach(function(r){var sc=r.status==='已接待'?'success':'warning';
-h+='<tr><td style="font-weight:500">'+r.memberName+'</td><td><span class="badge-tag '+(levelColors[r.memberLevel]||'gray')+'">'+r.memberLevel+'</span></td><td>'+r.method+'</td><td><span class="badge-tag '+sc+'">'+r.status+'</span></td><td>'+(r.guideName||'-')+'</td><td>'+(r.createTime||'-')+'</td></tr>'});
+h+='<tr><td style="font-weight:500">'+r.memberName+'</td><td><span class="badge-tag '+(levelColors[r.memberLevel]||'gray')+'">'+r.memberLevel+'</span></td><td>'+r.method+'</td><td><span class="badge-tag '+sc+'">'+r.status+'</span></td><td>'+(r.guideName||'-')+'</td><td>'+(r.enterTime||r.createTime||'-')+'</td><td>'+(r.completeTime||'<span style="color:var(--text-muted)">-</span>')+'</td></tr>'});
 h+='</tbody></table>'}
 h+='</div></div>';
 h+='<div class="card"><div class="card-header"><h3>会员列表</h3></div><div class="card-body"><table class="data-table"><thead><tr><th>会员号</th><th>姓名</th><th>等级</th><th>积分</th><th>累计消费</th><th>优惠券</th><th>最近到店</th><th>状态</th><th>操作</th></tr></thead><tbody>';
